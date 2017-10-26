@@ -2,67 +2,96 @@
 // that applies graceful shutdown.
 //
 // Typical usage:
-//  srv := server.New(addr, handler, logger)
+//  srv := server.New(addr, handler)
 //  go srv.Start()
 //  srv.Wait()
 //  srv.Shutdown()
 //
+// The example above stops the server only when a SIGINT is sent to the app.
+// If you want to manually stop the server, just call Stop() when you need:
+//  go func() {
+//      time.Sleep(time.Second * 5)
+//      srv.Stop()
+//  }()
+//
 // If you want to use custom http.Server:
 //  httpServer := &http.Server{...}
-//  srv := server.Wrap(srv, logger)
+//  srv := server.Wrap(srv)
 package server
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
-	"syscall"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 // Server is a http server with graceful shutdown.
 type Server struct {
 	origin      *http.Server
 	stopSignals chan os.Signal
-	lg          logrus.StdLogger // TODO: better interface
+
+	log io.Writer
+}
+
+// Option for server.
+type Option func(*Server)
+
+// Log returns an option that sets server logger.
+func Log(log io.Writer) Option {
+	return func(s *Server) {
+		s.log = log
+	}
 }
 
 // New returns a new Server.
-func New(addr string, handler http.Handler, logger logrus.StdLogger) *Server {
+func New(addr string, handler http.Handler, opts ...Option) *Server {
 	stopSignals := make(chan os.Signal, 1)
-	signal.Notify(stopSignals, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(stopSignals, os.Interrupt)
 
-	return &Server{
+	s := &Server{
 		origin:      &http.Server{Addr: addr, Handler: handler},
 		stopSignals: stopSignals,
-		lg:          logger,
 	}
+
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	return s
 }
 
 // Wrap returns a new Server that wraps http.Server.
-func Wrap(srv *http.Server, logger logrus.StdLogger) *Server {
+func Wrap(srv *http.Server, opts ...Option) *Server {
 	stopSignals := make(chan os.Signal, 1)
-	signal.Notify(stopSignals, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(stopSignals, os.Interrupt)
 
-	return &Server{
+	s := &Server{
 		origin:      srv,
 		stopSignals: stopSignals,
-		lg:          logger,
 	}
+
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	return s
 }
 
 // Start makes server listen and serve.
 // It blocks until server is stopped.
 func (s *Server) Start() {
-	s.lg.Printf("Start listening @ %s", s.origin.Addr)
+	s.logMessage("Start listening @ %s", s.origin.Addr)
 	err := s.origin.ListenAndServe()
 	if err != http.ErrServerClosed {
-		s.lg.Fatal(err)
+		s.logMessage(err.Error())
+		return
 	}
-	s.lg.Println("Server closed.")
+
+	s.logMessage("Server closed.")
 }
 
 // Wait blocks until SIGINT or SIGTERM is received.
@@ -71,23 +100,32 @@ func (s *Server) Wait() {
 	<-s.stopSignals
 }
 
-// Stop unblocks waiting server.
+// Stop unblocks waiting server, closing its signal channel.
 func (s *Server) Stop() {
-	s.stopSignals <- syscall.SIGTERM
+	signal.Stop(s.stopSignals)
+	close(s.stopSignals)
 }
 
 // Shutdown tries to gracefully shutdown server.
 func (s *Server) Shutdown() {
-	s.lg.Println("Shutdown server...")
+	s.logMessage("Shutdown server...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), gracefulTimeout)
 	defer cancel()
 
 	if err := s.origin.Shutdown(ctx); err != nil {
-		s.lg.Printf("Server graceful shutdown failed: %s\n", err)
+		s.logMessage("Server graceful shutdown failed: %s\n", err)
 	} else {
-		s.lg.Println("Server gracefully shut down.")
+		s.logMessage("Server gracefully shut down.")
 	}
+}
+
+func (s *Server) logMessage(format string, args ...interface{}) {
+	if s.log == nil {
+		return
+	}
+
+	fmt.Fprintf(s.log, format, args...)
 }
 
 const (

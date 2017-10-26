@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"testing"
@@ -15,10 +14,9 @@ import (
 func TestServer(t *testing.T) {
 	addr := fmt.Sprintf(":%d", getFreePort())
 	handler := http.HandlerFunc(testHandler)
-	logger := log.New(ioutil.Discard, "", log.LstdFlags)
 
 	t.Run("Should execute standard flow", func(t *testing.T) {
-		gsrv := server.New(addr, handler, logger)
+		gsrv := server.New(addr, handler)
 		go gsrv.Start()
 
 		go func() {
