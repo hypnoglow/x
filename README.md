@@ -1,6 +1,6 @@
 # x
 
-[![GoDoc](https://godoc.org/github.com/hypnoglow/x?status.svg)](https://godoc.org/github.com/hypnoglow/x/server)
+[![GoDoc](https://godoc.org/github.com/hypnoglow/x?status.svg)](https://godoc.org/github.com/hypnoglow/x)
 [![CircleCI](https://circleci.com/gh/hypnoglow/x.svg?style=shield)](https://circleci.com/gh/hypnoglow/x)
 [![codecov](https://codecov.io/gh/hypnoglow/x/branch/master/graph/badge.svg)](https://codecov.io/gh/hypnoglow/x)
 [![License MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](LICENSE)
