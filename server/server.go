@@ -26,15 +26,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"time"
 )
 
 // Server is a http server with graceful shutdown.
 type Server struct {
-	origin      *http.Server
-	stopSignals chan os.Signal
+	origin *http.Server
+	log    io.Writer
 
-	log io.Writer
+	stopSignals chan os.Signal
+	onceCloser  sync.Once
 }
 
 // Option for server.
@@ -88,6 +90,7 @@ func (s *Server) Start() {
 	err := s.origin.ListenAndServe()
 	if err != http.ErrServerClosed {
 		s.logMessage(err.Error())
+		s.Stop() // just to ensure everything is cleaned.
 		return
 	}
 
@@ -102,13 +105,16 @@ func (s *Server) Wait() {
 
 // Stop unblocks waiting server, closing its signal channel.
 func (s *Server) Stop() {
-	signal.Stop(s.stopSignals)
-	close(s.stopSignals)
+	s.onceCloser.Do(func() {
+		signal.Stop(s.stopSignals)
+		close(s.stopSignals)
+	})
 }
 
 // Shutdown tries to gracefully shutdown server.
 func (s *Server) Shutdown() {
 	s.logMessage("Shutdown server...")
+	s.Stop() // in case shutdown is triggered by a signal from os.
 
 	ctx, cancel := context.WithTimeout(context.Background(), gracefulTimeout)
 	defer cancel()
